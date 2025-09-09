@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import time
 import os
+import time
 import subprocess
 import requests
 
+# تنظیمات
 TOR_INSTANCES = {
-    "US": {"port": 9050, "data_dir": "/root/tor-us", "torrc": "/tmp/torrc-us.conf", "country": "US"},
-    "FR": {"port": 9051, "data_dir": "/root/tor-fr", "torrc": "/tmp/torrc-fr.conf", "country": "FR"},
-    "NL": {"port": 9052, "data_dir": "/root/tor-nl", "torrc": "/tmp/torrc-nl.conf", "country": "NL"}
+    "US": {"port": 9050, "data_dir": "/root/tor-us", "torrc": "/root/tor-us/torrc-us.conf", "country": "US"},
+    "FR": {"port": 9051, "data_dir": "/root/tor-fr", "torrc": "/root/tor-fr/torrc-fr.conf", "country": "FR"},
+    "NL": {"port": 9052, "data_dir": "/root/tor-nl", "torrc": "/root/tor-nl/torrc-nl.conf", "country": "NL"}
 }
+
+INTERVAL = 60  # ثانیه بین تغییر IP
+TIMES = 0      # 0 = بی‌نهایت
 
 def ma_ip(port):
     url = "http://checkip.amazonaws.com"
@@ -23,33 +27,42 @@ def ma_ip(port):
 
 def start_tor_instance(inst):
     os.makedirs(inst["data_dir"], exist_ok=True)
-    torrc_content = f"""
-SocksPort {inst['port']}
-DataDirectory {inst['data_dir']}
-"""
-    with open(inst["torrc"], "w") as f:
-        f.write(torrc_content)
-    os.system(f"pkill -f 'tor -f {inst['torrc']}'")
-    os.system(f"tor -f {inst['torrc']} &")
-    time.sleep(5)
+
+    # ساخت torrc در صورت عدم وجود
+    if not os.path.isfile(inst["torrc"]):
+        with open(inst["torrc"], "w") as f:
+            f.write(f"SocksPort {inst['port']}\n")
+            f.write(f"DataDirectory {inst['data_dir']}\n")
+            f.write(f"ExitNodes {{{inst['country']}}}\n")
+            f.write("StrictNodes 1\n")
+
+    # توقف Tor قبلی
+    subprocess.run(f"pkill -f 'tor -f {inst['torrc']}'", shell=True)
+
+    # استارت Tor
+    subprocess.Popen(f"tor -f {inst['torrc']}", shell=True)
+    time.sleep(5)  # زمان برای بوت شدن Tor
     print(f"[+] Tor {inst['country']} on port {inst['port']} started, IP: {ma_ip(inst['port'])}")
 
 os.system("clear")
 print("[+] Multi-Tor IP Changer Started\n")
-x = input("[+] Time interval in sec [default=60]: ") or "60"
-lin = input("[+] How many times to change IP? 0=infinite: ") or "0"
+
+# دریافت ورودی کاربر
+interval_input = input(f"[+] Time interval in sec [default={INTERVAL}]: ") or str(INTERVAL)
+times_input = input(f"[+] How many times to change IP? 0=infinite: ") or str(TIMES)
 
 try:
-    lin = int(lin)
-    interval = int(x)
-    if lin == 0:
+    interval = int(interval_input)
+    times = int(times_input)
+
+    if times == 0:
         print("[+] Starting infinite IP change. Ctrl+C to stop.")
         while True:
             for _, inst in TOR_INSTANCES.items():
                 start_tor_instance(inst)
             time.sleep(interval)
     else:
-        for _ in range(lin):
+        for _ in range(times):
             for _, inst in TOR_INSTANCES.items():
                 start_tor_instance(inst)
             time.sleep(interval)
