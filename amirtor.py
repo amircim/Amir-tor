@@ -1,4 +1,3 @@
-sudo bash -c 'cat > /root/amirtor_auto.py << "EOF"
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -81,4 +80,5 @@ try:
     change_ips(interval=int(x), loops=int(lin))
 except KeyboardInterrupt:
     print("\n[!] Auto-Tor closed by user.")
-EOF
+
+
