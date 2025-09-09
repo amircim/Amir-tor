@@ -2,89 +2,76 @@
 # -*- coding: utf-8 -*-
 
 import os
-import subprocess
 import time
+import subprocess
 import requests
 
-# --- Tor instances configuration ---
 TOR_INSTANCES = {
-    "US": {"port": 9050, "data_dir": "/var/lib/tor-us", "torrc": "/etc/tor/torrc-us", "country": "US"},
-    "FR": {"port": 9051, "data_dir": "/var/lib/tor-fr", "torrc": "/etc/tor/torrc-fr", "country": "FR"},
-    "NL": {"port": 9052, "data_dir": "/var/lib/tor-nl", "torrc": "/etc/tor/torrc-nl", "country": "NL"}
+    "US": {"port": 9050, "data_dir": "/var/lib/tor-us", "torrc": "/etc/tor/torrc-us"},
+    "FR": {"port": 9051, "data_dir": "/var/lib/tor-fr", "torrc": "/etc/tor/torrc-fr"},
+    "NL": {"port": 9052, "data_dir": "/var/lib/tor-nl", "torrc": "/etc/tor/torrc-nl"}
 }
 
-# --- Helper functions ---
-def check_install(pkg):
-    try:
-        subprocess.check_output(f"which {pkg}", shell=True)
-        print(f"[+] {pkg} is installed.")
-    except subprocess.CalledProcessError:
-        print(f"[!] {pkg} not found, installing...")
-        subprocess.check_call(f"sudo apt update && sudo apt install {pkg} -y", shell=True)
+# پل‌های internal برای هر کشور (مثل FDX100)
+INTERNAL_BRIDGES = {
+    "US": ["obfs4 127.0.0.1:9001 ... iat-mode=0"],
+    "FR": ["obfs4 127.0.0.1:9002 ... iat-mode=0"],
+    "NL": ["obfs4 127.0.0.1:9003 ... iat-mode=0"]
+}
 
-def get_tor_bridges():
-    """Use the same method as FDX100 Auto-Tor to get bridges."""
-    url = "https://bridges.torproject.org/bridges?transport=obfs4"
-    try:
-        r = requests.get(url, timeout=10)
-        # extract obfs4 lines
-        lines = [line.strip() for line in r.text.splitlines() if line.startswith("obfs4")]
-        return lines if lines else []
-    except:
-        return []
+def check_install():
+    if not shutil.which("tor"):
+        print("[+] Tor not found, installing...")
+        os.system("sudo apt update && sudo apt install tor -y")
+    if not shutil.which("obfs4proxy"):
+        print("[+] obfs4proxy not found, installing...")
+        os.system("sudo apt install obfs4proxy -y")
 
-def write_torrc(instance, bridges):
+def write_torrc(instance, country):
     os.makedirs(instance["data_dir"], exist_ok=True)
     with open(instance["torrc"], "w") as f:
         f.write(f"SocksPort {instance['port']}\n")
         f.write(f"DataDirectory {instance['data_dir']}\n")
         f.write("UseBridges 1\n")
         f.write("ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy\n")
-        for b in bridges:
+        for b in INTERNAL_BRIDGES[country]:
             f.write(f"{b}\n")
 
-def ma_ip(port):
-    url = "http://checkip.amazonaws.com"
+def get_ip(port):
     proxies = {"http": f"socks5://127.0.0.1:{port}", "https": f"socks5://127.0.0.1:{port}"}
     try:
-        return requests.get(url, proxies=proxies, timeout=10).text.strip()
+        return requests.get("http://checkip.amazonaws.com", proxies=proxies, timeout=10).text.strip()
     except:
         return "Cannot connect"
 
-def start_tor_instance(instance, bridges):
+def start_instance(instance, country):
     os.system(f"pkill -f 'tor -f {instance['torrc']}'")
-    write_torrc(instance, bridges)
+    write_torrc(instance, country)
     os.system(f"tor -f {instance['torrc']} &")
     time.sleep(5)
-    print(f"[+] Tor {instance['country']} on port {instance['port']} started, IP: {ma_ip(instance['port'])}")
+    print(f"[+] Tor {country} on port {instance['port']} started, IP: {get_ip(instance['port'])}")
 
 def change_ips(interval=60, loops=0):
-    bridges = get_tor_bridges()
-    if not bridges:
-        print("[!] Could not fetch bridges. Exiting.")
-        return
-
     if loops == 0:
         print("[+] Starting infinite IP change. Ctrl+C to stop.")
         while True:
-            for _, inst in TOR_INSTANCES.items():
-                start_tor_instance(inst, bridges)
+            for country, inst in TOR_INSTANCES.items():
+                start_instance(inst, country)
             time.sleep(interval)
     else:
         for _ in range(loops):
-            for _, inst in TOR_INSTANCES.items():
-                start_tor_instance(inst, bridges)
+            for country, inst in TOR_INSTANCES.items():
+                start_instance(inst, country)
             time.sleep(interval)
 
-# --- Main ---
-os.system("clear")
-check_install("tor")
-check_install("obfs4proxy")
-
-x = input("[+] Time interval in sec [default=60]: ") or "60"
-lin = input("[+] How many times to change IP? 0=infinite: ") or "0"
-
-try:
-    change_ips(interval=int(x), loops=int(lin))
-except KeyboardInterrupt:
-    print("\n[!] Auto-Tor closed by user.")
+if __name__ == "__main__":
+    import shutil
+    check_install()
+    os.system("clear")
+    print("[+] Multi-Tor IP Changer (FDX100 style) Started")
+    interval = input("[+] Time interval in sec [default=60]: ") or "60"
+    loops = input("[+] How many times to change IP? 0=infinite: ") or "0"
+    try:
+        change_ips(interval=int(interval), loops=int(loops))
+    except KeyboardInterrupt:
+        print("\n[!] Auto-Tor closed by user.")
