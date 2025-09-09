@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import time
@@ -6,67 +7,51 @@ import subprocess
 import requests
 
 TOR_INSTANCES = {
-    "US": 9050,
-    "FR": 9051,
-    "NL": 9052
+    "US": {"port": 9050, "data_dir": "/root/tor-us", "torrc": "/tmp/torrc-us.conf", "country": "US"},
+    "FR": {"port": 9051, "data_dir": "/root/tor-fr", "torrc": "/tmp/torrc-fr.conf", "country": "FR"},
+    "NL": {"port": 9052, "data_dir": "/root/tor-nl", "torrc": "/tmp/torrc-nl.conf", "country": "NL"}
 }
-
-def install_requirements():
-    try:
-        import requests
-    except:
-        os.system("pip3 install requests requests[socks]")
-
-    try:
-        subprocess.check_output("which tor", shell=True)
-    except subprocess.CalledProcessError:
-        os.system("sudo apt update && sudo apt install tor -y")
 
 def ma_ip(port):
     url = "http://checkip.amazonaws.com"
+    proxies = {"http": f"socks5://127.0.0.1:{port}", "https": f"socks5://127.0.0.1:{port}"}
     try:
-        r = requests.get(url, proxies={"http": f"socks5://127.0.0.1:{port}", "https": f"socks5://127.0.0.1:{port}"}, timeout=10)
+        r = requests.get(url, proxies=proxies, timeout=10)
         return r.text.strip()
     except:
         return "Cannot connect"
 
-def start_tor(port, data_dir):
-    os.makedirs(data_dir, exist_ok=True)
-    torrc = f"/tmp/torrc-{port}.conf"
-    with open(torrc, "w") as f:
-        f.write(f"SocksPort {port}\n")
-        f.write(f"DataDirectory {data_dir}\n")
-    # Kill any existing tor on this port
-    os.system(f"pkill -f 'tor -f {torrc}'")
-    # Start tor instance
-    os.system(f"tor -f {torrc} &")
+def start_tor_instance(inst):
+    os.makedirs(inst["data_dir"], exist_ok=True)
+    torrc_content = f"""
+SocksPort {inst['port']}
+DataDirectory {inst['data_dir']}
+"""
+    with open(inst["torrc"], "w") as f:
+        f.write(torrc_content)
+    os.system(f"pkill -f 'tor -f {inst['torrc']}'")
+    os.system(f"tor -f {inst['torrc']} &")
     time.sleep(5)
+    print(f"[+] Tor {inst['country']} on port {inst['port']} started, IP: {ma_ip(inst['port'])}")
 
-def change_all_ips():
-    for country, port in TOR_INSTANCES.items():
-        start_tor(port, f"/var/lib/tor-{country.lower()}")
-        print(f"[+] Tor {country} on port {port} started, IP: {ma_ip(port)}")
+os.system("clear")
+print("[+] Multi-Tor IP Changer Started\n")
+x = input("[+] Time interval in sec [default=60]: ") or "60"
+lin = input("[+] How many times to change IP? 0=infinite: ") or "0"
 
-if __name__ == "__main__":
-    install_requirements()
-    os.system("clear")
-    print("[+] Multi-Tor IP Changer Started\n")
-    interval = input("[+] Time interval in sec [default=60]: ") or "60"
-    loops = input("[+] How many times do you want to change your IP? 0=infinite >> ") or "0"
-
-    try:
-        interval = int(interval)
-        loops = int(loops)
-        if loops == 0:
-            print("[+] Starting infinite IP change. Ctrl+C to stop.")
-            while True:
-                change_all_ips()
-                time.sleep(interval)
-        else:
-            for _ in range(loops):
-                change_all_ips()
-                time.sleep(interval)
-    except KeyboardInterrupt:
-        print("\n[!] Auto-Tor closed by user.")
-    except ValueError:
-        print("Invalid number input.")
+try:
+    lin = int(lin)
+    interval = int(x)
+    if lin == 0:
+        print("[+] Starting infinite IP change. Ctrl+C to stop.")
+        while True:
+            for _, inst in TOR_INSTANCES.items():
+                start_tor_instance(inst)
+            time.sleep(interval)
+    else:
+        for _ in range(lin):
+            for _, inst in TOR_INSTANCES.items():
+                start_tor_instance(inst)
+            time.sleep(interval)
+except KeyboardInterrupt:
+    print("\n[!] Auto-Tor closed by user.")
